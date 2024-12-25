@@ -1,5 +1,6 @@
 package model_env;
 
+import groovy.lang.Binding;
 import groovy.lang.GroovyShell;
 
 import java.io.BufferedReader;
@@ -7,18 +8,19 @@ import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
 import java.lang.reflect.Field;
-import java.util.Arrays;
-import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 
 public class Controller {
     private Object model;
-    private List<Field> fields;
     private String[] years;
+    private GroovyShell groovyShell;
+    private Binding binding;
 
     public Controller(String modelName) {
         try {
             this.model = Class.forName("model_env." + modelName).getDeclaredConstructors()[0].newInstance();
-            fields = Arrays.stream(model.getClass().getDeclaredFields()).toList();
+            binding = new Binding();
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
@@ -42,8 +44,10 @@ public class Controller {
                         values = addValues(ll, values);
                     }
                     Field field = model.getClass().getDeclaredField(line.split(" ")[0]);
-                    field.setAccessible(true);
-                    field.set(model, values);
+                    if (field.isAnnotationPresent(Bind.class)) {
+                        field.setAccessible(true);
+                        field.set(model, values);
+                    }
                 }
             }
         } catch (IOException | IllegalAccessException | NoSuchFieldException e) {
@@ -59,8 +63,15 @@ public class Controller {
 
     public void runScriptFromFile(String fname) {
         try {
-            GroovyShell shell = new GroovyShell();
-            shell.evaluate(new File("src\\main\\java\\model_env\\" + fname));
+            for (Field field : model.getClass().getDeclaredFields()) {
+                if (field.isAnnotationPresent(Bind.class)) {
+                    field.setAccessible(true);
+                    binding.setVariable(field.getName(), field.get(model));
+                }
+            }
+
+            groovyShell = new GroovyShell(binding);
+            groovyShell.evaluate(new File("src\\main\\java\\model_env\\" + fname));
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
@@ -68,8 +79,15 @@ public class Controller {
 
     public void runScript(String script) {
         try {
-            GroovyShell shell = new GroovyShell();
-            shell.evaluate(script);
+            for (Field field : model.getClass().getDeclaredFields()) {
+                if (field.isAnnotationPresent(Bind.class)) {
+                    field.setAccessible(true);
+                    binding.setVariable(field.getName(), field.get(model));
+                }
+            }
+
+            groovyShell = new GroovyShell(binding);
+            groovyShell.evaluate(script);
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
@@ -81,25 +99,46 @@ public class Controller {
             builder.append(year).append("\t");
         }
         builder.append("\n");
-        for (Field field : fields) {
+        for (Field field : model.getClass().getDeclaredFields()) {
             field.setAccessible(true);
-            if (field.isAnnotationPresent(Bind.class) && !field.getName().equals("LL")) {
+            if (!field.getName().equals("LL") && field.isAnnotationPresent(Bind.class)) {
                 builder.append(field.getName()).append("\t");
                 try {
-                    if (field.get(model) instanceof double[]) {
-                        double[] values = (double[]) field.get(model);
-                        for (double value : values) {
-                            builder.append(value).append("\t");
-                        }
+                    double[] values = (double[]) field.get(model);
+                    for (double value : values) {
+                        builder.append(value).append("\t");
                     }
-                    System.out.println();
                 } catch (IllegalAccessException e) {
                     throw new RuntimeException(e);
                 }
                 builder.append("\n");
             }
         }
+        Map<String, double[]> scriptResults = getResultsFromScript();
+        for (String name : scriptResults.keySet()) {
+            if (!builder.toString().contains(name)) {
+                builder.append(name).append("\t");
+                for (double value : scriptResults.get(name)) {
+                    builder.append(value).append("\t");
+                }
+                builder.append("\n");
+            }
+        }
         return builder.toString();
+    }
+
+    private Map<String, double[]> getResultsFromScript() {
+        Map<String, double[]> varNamesToValues = new HashMap<>();
+        Map variables = binding.getVariables();
+        for (Object name : binding.getVariables().keySet()) {
+            String varName = (String) name;
+            if (!varName.matches("[a-z]")) {
+                if (variables.get(varName) instanceof double[]) {
+                    varNamesToValues.put(varName, (double[]) variables.get(varName));
+                }
+            }
+        }
+        return varNamesToValues;
     }
 
     private double[] parseValues(String line) {
