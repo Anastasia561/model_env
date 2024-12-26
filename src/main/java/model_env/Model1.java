@@ -1,9 +1,8 @@
 package model_env;
 
-public class Model1 {
+public class Model1 extends Model {
     @Bind
-    private int LL; //number of years
-
+    protected int LL; //number of years
     @Bind
     private double[] twKI; //private consumption griwth
     @Bind
@@ -33,6 +32,7 @@ public class Model1 {
     public Model1() {
     }
 
+    @Override
     public void run() {
         PKB = new double[LL];
         PKB[0] = KI[0] + KS[0] + INW[0] + EKS[0] - IMP[0];

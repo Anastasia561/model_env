@@ -8,7 +8,16 @@ public class Main {
 
         controller.runScriptFromFile("script1.groovy");
 
-        String results = controller.getResultsAsTsv();
-        System.out.println(results);
+//        String results = controller.getResultsAsTsv();
+//        System.out.println(results);
+
+        Controller controller2 = new Controller("Model2");
+        controller2.readDataFrom("C:\\Users\\User\\JavaProjects\\model_env\\src\\main\\resources\\data2.txt");
+        controller2.runModel();
+
+
+        String results2 = controller2.getResultsAsTsv();
+        System.out.println(results2);
+
     }
 }
