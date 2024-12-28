@@ -14,7 +14,8 @@ import java.util.Map;
 
 public class Controller {
     private static final String PACKAGE_NAME = "model_env.model.";
-    private static final String DIR_NAME = "src/main/resources/scripts/";
+    private static final String SCRIPTS_DIR_NAME = "src/main/resources/scripts/";
+    private static final String DATA_DIR_NAME = "src/main/resources/data/";
     private final Model model;
     private String[] years;
     private GroovyShell groovyShell;
@@ -29,7 +30,7 @@ public class Controller {
     }
 
     public Controller readDataFrom(String fname) {
-        try (BufferedReader reader = new BufferedReader(new FileReader(fname))) {
+        try (BufferedReader reader = new BufferedReader(new FileReader(DATA_DIR_NAME + fname))) {
             String line;
             int ll = 1;
             while ((line = reader.readLine()) != null) {
@@ -60,7 +61,7 @@ public class Controller {
         try {
             addVariablesToScript();
             groovyShell = new GroovyShell(binding);
-            groovyShell.evaluate(new File(DIR_NAME + fname));
+            groovyShell.evaluate(new File(SCRIPTS_DIR_NAME + fname));
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
