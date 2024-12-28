@@ -1,4 +1,7 @@
-package model_env;
+package model_env.model;
+
+import model_env.Bind;
+import model_env.model.Model;
 
 public class Model1 extends Model {
     @Bind

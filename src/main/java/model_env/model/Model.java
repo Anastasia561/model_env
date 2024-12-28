@@ -1,4 +1,4 @@
-package model_env;
+package model_env.model;
 
 public abstract class Model {
 

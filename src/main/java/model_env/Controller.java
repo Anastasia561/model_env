@@ -1,6 +1,8 @@
 package model_env;
 
+import groovy.lang.Binding;
 import groovy.lang.GroovyShell;
+import model_env.model.Model;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -11,92 +13,71 @@ import java.util.HashMap;
 import java.util.Map;
 
 public class Controller {
+    private static final String PACKAGE_NAME = "model_env.model.";
+    private static final String DIR_NAME = "src/main/resources/scripts/";
     private final Model model;
     private String[] years;
     private GroovyShell groovyShell;
-    //private Binding binding;
+    private Binding binding;
 
     public Controller(String modelName) {
         try {
-            model = (Model) Class.forName("model_env." + modelName).getDeclaredConstructors()[0].newInstance();
-            //binding = new Binding();
+            model = (Model) Class.forName(PACKAGE_NAME + modelName).getDeclaredConstructors()[0].newInstance();
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
     }
 
-    public void readDataFrom(String fname) {
+    public Controller readDataFrom(String fname) {
         try (BufferedReader reader = new BufferedReader(new FileReader(fname))) {
             String line;
             int ll = 1;
             while ((line = reader.readLine()) != null) {
                 line = line.replaceAll("\\s+", " ").trim();
+
                 if (line.startsWith("LATA")) {
-                    years = line.split(" ");
-                    Field LLfield = model.getClass().getDeclaredField("LL");
-                    LLfield.setAccessible(true);
-                    ll = years.length - 1;
-                    LLfield.set(model, ll);
-
-                    //GlobalBindingContext.setVariable(LLfield.getName(), LLfield.get(model));
+                    ll = initLLField(line);
                 } else {
-                    double[] values = parseValues(line);
-                    if (values.length < ll) {
-                        values = addValues(ll, values);
-                    }
-
-                    Field field = getField(model.getClass(), (line.split(" ")[0]));
-                    if (field != null && field.isAnnotationPresent(Bind.class)) {
-                        field.setAccessible(true);
-                        field.set(model, values);
-
-                        //GlobalBindingContext.setVariable(field.getName(), field.get(model));
-                    }
+                    initModelField(line, ll);
                 }
             }
-        } catch (IOException | IllegalAccessException | NoSuchFieldException e) {
+        } catch (IOException e) {
             throw new RuntimeException(e);
         }
 
-        saveVariablesFromModel(model);
+        saveVariablesFromModel();
+        return this;
     }
 
-    public void runModel() {
-        addVariablesToModel(model);
+    public Controller runModel() {
+        addVariablesToModel();
         model.run();
-        saveVariablesFromModel(model);
+        saveVariablesFromModel();
+        return this;
     }
 
-    public void runScriptFromFile(String fname) {
+    public Controller runScriptFromFile(String fname) {
         try {
-//            for (Field field : model.getClass().getDeclaredFields()) {
-//                if (field.isAnnotationPresent(Bind.class)) {
-//                    field.setAccessible(true);
-//                    //binding.setVariable(field.getName(), field.get(model));
-//                }
-//            }
-
-            groovyShell = new GroovyShell(GlobalBindingContext.getGlobalBinding());
-            groovyShell.evaluate(new File("src\\main\\java\\model_env\\" + fname));
+            addVariablesToScript();
+            groovyShell = new GroovyShell(binding);
+            groovyShell.evaluate(new File(DIR_NAME + fname));
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
+        saveVariablesFromScript();
+        return this;
     }
 
-    public void runScript(String script) {
+    public Controller runScript(String script) {
         try {
-//            for (Field field : model.getClass().getDeclaredFields()) {
-//                if (field.isAnnotationPresent(Bind.class)) {
-//                    field.setAccessible(true);
-//                    binding.setVariable(field.getName(), field.get(model));
-//                }
-//            }
-
-            groovyShell = new GroovyShell(GlobalBindingContext.getGlobalBinding());
+            addVariablesToScript();
+            groovyShell = new GroovyShell(binding);
             groovyShell.evaluate(script);
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
+        saveVariablesFromScript();
+        return this;
     }
 
     public String getResultsAsTsv() {
@@ -106,6 +87,60 @@ public class Controller {
         }
         builder.append("\n");
 
+        addModelFieldsToOutput(builder);
+
+        if (groovyShell != null) {
+            addScriptFieldsToOutput(builder);
+        }
+        return builder.toString();
+    }
+
+    private void initModelField(String line, int ll) {
+        double[] values = parseValues(line);
+        if (values.length < ll) {
+            values = addValues(ll, values);
+        }
+
+        Field field = getField(model.getClass(), (line.split(" ")[0]));
+        if (field != null && field.isAnnotationPresent(Bind.class)) {
+            field.setAccessible(true);
+            try {
+                field.set(model, values);
+            } catch (IllegalAccessException e) {
+                throw new RuntimeException(e);
+            }
+        }
+    }
+
+    private int initLLField(String line) {
+        int ll;
+        years = line.split(" ");
+        try {
+            Field LLfield = model.getClass().getDeclaredField("LL");
+            LLfield.setAccessible(true);
+            ll = years.length - 1;
+            LLfield.set(model, ll);
+        } catch (NoSuchFieldException | IllegalAccessException e) {
+            throw new RuntimeException(e);
+        }
+        return ll;
+    }
+
+
+    private void addScriptFieldsToOutput(StringBuilder builder) {
+        Map<String, double[]> scriptResults = getResultsFromScript();
+        for (String name : scriptResults.keySet()) {
+            if (!builder.toString().contains(name)) {
+                builder.append(name).append("\t");
+                for (double value : scriptResults.get(name)) {
+                    builder.append(value).append("\t");
+                }
+                builder.append("\n");
+            }
+        }
+    }
+
+    private void addModelFieldsToOutput(StringBuilder builder) {
         for (Field field : model.getClass().getDeclaredFields()) {
             field.setAccessible(true);
             if (!field.getName().equals("LL") && field.isAnnotationPresent(Bind.class)) {
@@ -116,34 +151,19 @@ public class Controller {
                         builder.append(value).append("\t");
                     }
 
-                    // GlobalBindingContext.setVariable(field.getName(), field.get(model));
-
                 } catch (IllegalAccessException e) {
                     throw new RuntimeException(e);
                 }
                 builder.append("\n");
             }
         }
-        Map<String, double[]> scriptResults = getResultsFromScript();
-        for (String name : scriptResults.keySet()) {
-            if (!builder.toString().contains(name)) {
-                builder.append(name).append("\t");
-
-                GlobalBindingContext.setVariable(name, scriptResults.get(name));
-
-                for (double value : scriptResults.get(name)) {
-                    builder.append(value).append("\t");
-                }
-                builder.append("\n");
-            }
-        }
-        return builder.toString();
     }
 
     private Map<String, double[]> getResultsFromScript() {
         Map<String, double[]> varNamesToValues = new HashMap<>();
-        Map variables = GlobalBindingContext.getGlobalBinding().getVariables();
-        for (Object name : GlobalBindingContext.getGlobalBinding().getVariables().keySet()) {
+
+        Map variables = groovyShell.getContext().getVariables();
+        for (Object name : variables.keySet()) {
             String varName = (String) name;
             if (!varName.matches("[a-z]")) {
                 if (variables.get(varName) instanceof double[]) {
@@ -172,13 +192,16 @@ public class Controller {
         return newValues;
     }
 
-    private void saveVariablesFromModel(Model model) {
+    private void saveVariablesFromModel() {
         Field[] fields = model.getClass().getDeclaredFields();
         for (Field field : fields) {
             if (field.isAnnotationPresent(Bind.class)) {
                 field.setAccessible(true);
                 try {
-                    GlobalBindingContext.setVariable(field.getName(), field.get(model));
+                    Object value = field.get(model);
+                    if (value != null) {
+                        GlobalVariableContext.setVariable(field.getName(), field.get(model));
+                    }
                 } catch (IllegalAccessException e) {
                     throw new RuntimeException(e);
                 }
@@ -186,19 +209,36 @@ public class Controller {
         }
     }
 
-    private void addVariablesToModel(Model model) {
-        for (Object name : GlobalBindingContext.getGlobalBinding().getVariables().keySet()) {
-            String varName = (String) name;
+    private void addVariablesToModel() {
+        for (String varName : GlobalVariableContext.getGlobalContext().keySet()) {
             Field field = getField(model.getClass(), varName);
             if (field != null) {
                 field.setAccessible(true);
                 try {
-                    field.set(model, GlobalBindingContext.getVariable(varName));
+                    Object value = GlobalVariableContext.getVariable(varName);
+                    if (value != null) {
+                        field.set(model, value);
+                    }
                 } catch (IllegalAccessException e) {
                     throw new RuntimeException(e);
                 }
-
             }
+        }
+    }
+
+    private void saveVariablesFromScript() {
+        for (Object name : binding.getVariables().keySet()) {
+            String varName = (String) name;
+            if (!varName.matches("[a-z]")) {
+                GlobalVariableContext.setVariable(varName, binding.getVariable(varName));
+            }
+        }
+    }
+
+    private void addVariablesToScript() {
+        binding = new Binding();
+        for (String varName : GlobalVariableContext.getGlobalContext().keySet()) {
+            binding.setVariable(varName, GlobalVariableContext.getVariable(varName));
         }
     }
 
@@ -209,5 +249,4 @@ public class Controller {
             return null;
         }
     }
-
 }
