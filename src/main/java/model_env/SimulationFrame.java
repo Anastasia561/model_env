@@ -1,6 +1,7 @@
 package model_env;
 
 import javax.swing.*;
+import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
 import java.awt.*;
 import java.io.File;
@@ -9,20 +10,22 @@ public class SimulationFrame extends JFrame {
     private Controller controller;
     private JList<String> modelList;
     private JList<String> dataList;
-    private JPanel rightPanel;
-    private JPanel leftPanel;
+    private JScrollPane table;
+    private DefaultTableModel tableModel;
+    private final JPanel rightPanel;
 
     public SimulationFrame() {
         setTitle("Modelling environment");
-        setSize(800, 400);
+        setSize(900, 400);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setVisible(true);
         setLocationRelativeTo(null);
+        setResizable(false);
         setLayout(new BorderLayout());
 
         rightPanel = createRightPanel();
         rightPanel.setVisible(false);
-        leftPanel = createLeftPanel();
+        JPanel leftPanel = createLeftPanel();
         add(leftPanel, BorderLayout.WEST);
         add(rightPanel, BorderLayout.EAST);
     }
@@ -62,8 +65,15 @@ public class SimulationFrame extends JFrame {
             if (selectedModel != null) {
                 controller = new Controller(selectedModel);
                 if (selectedData != null) {
-                    rightPanel.setVisible(true);
                     controller.readDataFrom(selectedData).runModel();
+
+                    if (!rightPanel.isVisible()) {
+                        rightPanel.setVisible(true);
+                        table = createTable();
+                        rightPanel.add(table);
+                    } else {
+                        updateTable();
+                    }
                 } else {
                     JOptionPane.showMessageDialog(this, "Please select data to run.");
                 }
@@ -79,22 +89,9 @@ public class SimulationFrame extends JFrame {
         JPanel tablePanel = new JPanel(new BorderLayout());
 
         JPanel buttonsPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 10));
-        buttonsPanel.setPreferredSize(new Dimension(getWidth() * 2 / 3, 100));
+        buttonsPanel.setPreferredSize(new Dimension(getWidth() * 2 / 3 - 20, 40));
 
-        JButton fileScriptButton = new JButton("Run script from file");
-        fileScriptButton.setFocusable(false);
-        fileScriptButton.addActionListener(e -> {
-            JFileChooser fileChooser = new JFileChooser();
-            int result = fileChooser.showOpenDialog(this);
-            if (result == JFileChooser.APPROVE_OPTION) {
-                File file = fileChooser.getSelectedFile();
-                if (controller != null) {
-                    controller.runScriptFromFile(file.getName());
-                } else {
-                    JOptionPane.showMessageDialog(this, "Please select model first");
-                }
-            }
-        });
+        JButton fileScriptButton = createFileScriptButton();
 
         JButton createdScriptButton = new JButton("Create and run ad hoc script");
         createdScriptButton.setFocusable(false);
@@ -104,7 +101,6 @@ public class SimulationFrame extends JFrame {
 
         buttonsPanel.add(fileScriptButton);
         buttonsPanel.add(createdScriptButton);
-        //tablePanel.add(createTable());
 
         rightPanel.add(buttonsPanel, BorderLayout.SOUTH);
         rightPanel.add(tablePanel, BorderLayout.NORTH);
@@ -112,16 +108,77 @@ public class SimulationFrame extends JFrame {
         return rightPanel;
     }
 
+    private JButton createFileScriptButton() {
+        JButton fileScriptButton = new JButton("Run script from file");
+        fileScriptButton.setFocusable(false);
+        fileScriptButton.addActionListener(e -> {
+            JFileChooser fileChooser = new JFileChooser();
+            int result = fileChooser.showOpenDialog(this);
+            if (result == JFileChooser.APPROVE_OPTION) {
+                File file = fileChooser.getSelectedFile();
+                controller.runScriptFromFile(file.getName());
+                updateTable();
+            }
+        });
+        return fileScriptButton;
+    }
 
-    private JTable createTable() {
+    private String[] getColumnNames() {
         String results = controller.getResultsAsTsv();
         String[] rowLines = results.split("\n");
-        String[] columnNames = rowLines[0].split(" ");
-        String[][] data = new String[rowLines.length][];
-        //popilate table
-        DefaultTableModel tableModel = new DefaultTableModel(data, columnNames);
+        return rowLines[0].split("\t");
+    }
 
-        return new JTable(tableModel);
+    private String[][] getTableData() {
+        String results = controller.getResultsAsTsv();
+        String[] rowLines = results.split("\n");
+        String[] columnNames = getColumnNames();
+        String[][] data = new String[rowLines.length - 1][columnNames.length];
+
+        for (int i = 1; i < rowLines.length; i++) {
+            String[] values = rowLines[i].split("\t");
+            for (int j = 0; j < values.length; j++) {
+                if (values[j].matches("-?\\d+(\\.\\d+)?")) {
+                    values[j] = String.format("%.1f", Double.parseDouble(values[j]));
+                }
+            }
+            data[i - 1] = values;
+        }
+        return data;
+    }
+
+    private void updateTable() {
+        String[] columnNames = getColumnNames();
+        String[][] data = getTableData();
+        tableModel.setDataVector(data, columnNames);
+
+        DefaultTableCellRenderer leftRenderer = new DefaultTableCellRenderer();
+        leftRenderer.setHorizontalAlignment(SwingConstants.LEFT);
+
+        ((JTable) (table.getViewport().getView())).getColumnModel().getColumn(0).setCellRenderer(leftRenderer);
+
+        table.revalidate();
+        table.repaint();
+    }
+
+    private JScrollPane createTable() {
+        String[] columnNames = getColumnNames();
+        String[][] data = getTableData();
+
+        tableModel = new DefaultTableModel(data, columnNames);
+
+        JTable table = new JTable(tableModel);
+
+        DefaultTableCellRenderer rightRenderer = new DefaultTableCellRenderer();
+        rightRenderer.setHorizontalAlignment(SwingConstants.RIGHT);
+
+        DefaultTableCellRenderer leftRenderer = new DefaultTableCellRenderer();
+        leftRenderer.setHorizontalAlignment(SwingConstants.LEFT);
+
+        table.getColumnModel().getColumn(0).setCellRenderer(leftRenderer);
+        table.setDefaultRenderer(table.getColumnClass(2), rightRenderer);
+
+        return new JScrollPane(table);
     }
 
     private void createScriptArea() {
@@ -144,15 +201,12 @@ public class SimulationFrame extends JFrame {
         runButton.addActionListener(e -> {
             String script = scriptTextArea.getText();
             if (!script.isEmpty()) {
-                if (controller != null) {
-                    controller.runScript(script);
-                } else {
-                    JOptionPane.showMessageDialog(this, "Please select model first");
-                }
+                controller.runScript(script);
+                updateTable();
+                frame.dispose();
             } else {
                 JOptionPane.showMessageDialog(this, "Please enter a script before running.");
             }
-            frame.dispose();
         });
 
         panel.add(scrollPane, BorderLayout.CENTER);
