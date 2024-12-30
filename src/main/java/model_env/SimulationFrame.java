@@ -5,6 +5,8 @@ import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
 import java.awt.*;
 import java.io.File;
+import java.text.DecimalFormat;
+import java.text.DecimalFormatSymbols;
 
 public class SimulationFrame extends JFrame {
     private Controller controller;
@@ -65,15 +67,21 @@ public class SimulationFrame extends JFrame {
             if (selectedModel != null) {
                 controller = new Controller(selectedModel);
                 if (selectedData != null) {
-                    controller.readDataFrom(selectedData).runModel();
+                    try {
+                        controller.readDataFrom(selectedData).runModel();
 
-                    if (!rightPanel.isVisible()) {
-                        rightPanel.setVisible(true);
-                        table = createTable();
-                        rightPanel.add(table);
-                    } else {
-                        updateTable();
+                        if (!rightPanel.isVisible()) {
+                            rightPanel.setVisible(true);
+                            table = createTable();
+                            rightPanel.add(table);
+                        } else {
+                            updateTable();
+                        }
+
+                    } catch (NullPointerException a) {
+                        JOptionPane.showMessageDialog(this, "This model needs results from other calculations");
                     }
+
                 } else {
                     JOptionPane.showMessageDialog(this, "Please select data to run.");
                 }
@@ -135,11 +143,22 @@ public class SimulationFrame extends JFrame {
         String[] columnNames = getColumnNames();
         String[][] data = new String[rowLines.length - 1][columnNames.length];
 
+        DecimalFormatSymbols symbols = new DecimalFormatSymbols();
+        symbols.setGroupingSeparator(' ');
+        DecimalFormat formatter = new DecimalFormat("#,###.0", symbols);
+
         for (int i = 1; i < rowLines.length; i++) {
             String[] values = rowLines[i].split("\t");
             for (int j = 0; j < values.length; j++) {
                 if (values[j].matches("-?\\d+(\\.\\d+)?")) {
-                    values[j] = String.format("%.1f", Double.parseDouble(values[j]));
+                    double number = Double.parseDouble(values[j]);
+                    if (number >= 1_000) {
+                        values[j] = formatter.format(number);
+                    } else if (number < 1) {
+                        values[j] = String.format("%.3f", Double.parseDouble(values[j]));
+                    } else {
+                        values[j] = String.format("%.2f", Double.parseDouble(values[j]));
+                    }
                 }
             }
             data[i - 1] = values;

@@ -127,7 +127,6 @@ public class Controller {
         return ll;
     }
 
-
     private void addScriptFieldsToOutput(StringBuilder builder) {
         Map<String, double[]> scriptResults = getResultsFromScript();
         for (String name : scriptResults.keySet()) {
@@ -163,7 +162,7 @@ public class Controller {
     private Map<String, double[]> getResultsFromScript() {
         Map<String, double[]> varNamesToValues = new HashMap<>();
 
-        Map variables = groovyShell.getContext().getVariables();
+        Map variables = binding.getVariables();
         for (Object name : variables.keySet()) {
             String varName = (String) name;
             if (!varName.matches("[a-z]")) {
@@ -213,7 +212,7 @@ public class Controller {
     private void addVariablesToModel() {
         for (String varName : GlobalVariableContext.getGlobalContext().keySet()) {
             Field field = getField(model.getClass(), varName);
-            if (field != null) {
+            if (field != null && field.isAnnotationPresent(Bind.class)) {
                 field.setAccessible(true);
                 try {
                     Object value = GlobalVariableContext.getVariable(varName);
