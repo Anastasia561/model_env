@@ -11,6 +11,7 @@ import java.io.IOException;
 import java.lang.reflect.Field;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 
 public class Controller {
     private static final String PACKAGE_NAME = "model_env.model.";
@@ -20,6 +21,7 @@ public class Controller {
     private String[] years;
     private GroovyShell groovyShell;
     private Binding binding;
+    private Map<String, Object> initialBindingState;
 
     public Controller(String modelName) {
         try {
@@ -60,6 +62,7 @@ public class Controller {
     public Controller runScriptFromFile(String fname) {
         try {
             addVariablesToScript();
+            initialBindingState = new HashMap<>(binding.getVariables());
             groovyShell = new GroovyShell(binding);
             groovyShell.evaluate(new File(SCRIPTS_DIR_NAME + fname));
         } catch (Exception e) {
@@ -72,6 +75,7 @@ public class Controller {
     public Controller runScript(String script) {
         try {
             addVariablesToScript();
+            initialBindingState = new HashMap<>(binding.getVariables());
             groovyShell = new GroovyShell(binding);
             groovyShell.evaluate(script);
         } catch (Exception e) {
@@ -161,13 +165,18 @@ public class Controller {
 
     private Map<String, double[]> getResultsFromScript() {
         Map<String, double[]> varNamesToValues = new HashMap<>();
+        Map<String, Object> currentVariables = binding.getVariables();
 
-        Map variables = binding.getVariables();
-        for (Object name : variables.keySet()) {
-            String varName = (String) name;
-            if (!varName.matches("[a-z]")) {
-                if (variables.get(varName) instanceof double[]) {
-                    varNamesToValues.put(varName, (double[]) variables.get(varName));
+        for (Map.Entry<String, Object> entry : currentVariables.entrySet()) {
+            String varName = entry.getKey();
+            Object value = entry.getValue();
+
+            //getting only variables that were created or modified in that script
+            if (!initialBindingState.containsKey(varName) || !Objects.equals(initialBindingState.get(varName), value)) {
+                if (!varName.matches("[a-z]")) {
+                    if (value instanceof double[]) {
+                        varNamesToValues.put(varName, (double[]) value);
+                    }
                 }
             }
         }
