@@ -7,6 +7,9 @@ import java.awt.*;
 import java.io.File;
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Set;
 
 public class SimulationFrame extends JFrame {
     private Controller controller;
@@ -14,6 +17,7 @@ public class SimulationFrame extends JFrame {
     private JList<String> dataList;
     private JScrollPane table;
     private DefaultTableModel tableModel;
+    private String[][] tableData;
     private final JPanel rightPanel;
 
     public SimulationFrame() {
@@ -75,9 +79,9 @@ public class SimulationFrame extends JFrame {
                             table = createTable();
                             rightPanel.add(table);
                         } else {
-                            updateTable();
+                            updateWholeTable();
                         }
-
+                        tableData = getTableData();
                     } catch (NullPointerException a) {
                         JOptionPane.showMessageDialog(this, "This model needs results from other calculations");
                     }
@@ -145,7 +149,8 @@ public class SimulationFrame extends JFrame {
 
         DecimalFormatSymbols symbols = new DecimalFormatSymbols();
         symbols.setGroupingSeparator(' ');
-        DecimalFormat formatter = new DecimalFormat("#,###.0", symbols);
+        DecimalFormat formatter1 = new DecimalFormat("#,###.0", symbols);
+        DecimalFormat formatter2 = new DecimalFormat("#,##0.00#", symbols);
 
         for (int i = 1; i < rowLines.length; i++) {
             String[] values = rowLines[i].split("\t");
@@ -153,9 +158,9 @@ public class SimulationFrame extends JFrame {
                 if (values[j].matches("-?\\d+(\\.\\d+)?")) {
                     double number = Double.parseDouble(values[j]);
                     if (number >= 1_000) {
-                        values[j] = formatter.format(number);
+                        values[j] = formatter1.format(number);
                     } else if (number < 1) {
-                        values[j] = String.format("%.3f", Double.parseDouble(values[j]));
+                        values[j] = formatter2.format(number);
                     } else {
                         values[j] = String.format("%.2f", Double.parseDouble(values[j]));
                     }
@@ -166,10 +171,43 @@ public class SimulationFrame extends JFrame {
         return data;
     }
 
-    private void updateTable() {
+    private void updateWholeTable() {
+        tableData = getTableData();
         String[] columnNames = getColumnNames();
-        String[][] data = getTableData();
-        tableModel.setDataVector(data, columnNames);
+        tableModel.setDataVector(tableData, columnNames);
+
+        DefaultTableCellRenderer leftRenderer = new DefaultTableCellRenderer();
+        leftRenderer.setHorizontalAlignment(SwingConstants.LEFT);
+
+        ((JTable) (table.getViewport().getView())).getColumnModel().getColumn(0).setCellRenderer(leftRenderer);
+
+        table.revalidate();
+        table.repaint();
+    }
+
+    private void updateTable() {
+        String[][] newTableData = getTableData();
+        String[][] oldTableData = tableData;
+
+        Set<String> oldVarNames = new HashSet<>();
+        for (String[] row : oldTableData) {
+            oldVarNames.add(row[0]);
+        }
+
+        ArrayList<String[]> rowsToAdd = new ArrayList<>();
+        for (String[] newRow : newTableData) {
+            if (!oldVarNames.contains(newRow[0])) {
+                rowsToAdd.add(newRow);
+                tableModel.addRow(newRow);
+            }
+        }
+        String[][] updatedTableData = new String[tableData.length + rowsToAdd.size()][];
+        System.arraycopy(tableData, 0, updatedTableData, 0, tableData.length);
+        int startIndex = tableData.length;
+        for (int i = 0; i < rowsToAdd.size(); i++) {
+            updatedTableData[startIndex + i] = rowsToAdd.get(i);
+        }
+        tableData = updatedTableData;
 
         DefaultTableCellRenderer leftRenderer = new DefaultTableCellRenderer();
         leftRenderer.setHorizontalAlignment(SwingConstants.LEFT);
@@ -220,9 +258,13 @@ public class SimulationFrame extends JFrame {
         runButton.addActionListener(e -> {
             String script = scriptTextArea.getText();
             if (!script.isEmpty()) {
-                controller.runScript(script);
-                updateTable();
-                frame.dispose();
+                try {
+                    controller.runScript(script);
+                    updateTable();
+                    frame.dispose();
+                } catch (Exception a) {
+                    JOptionPane.showMessageDialog(this, "Please enter correct script.");
+                }
             } else {
                 JOptionPane.showMessageDialog(this, "Please enter a script before running.");
             }
